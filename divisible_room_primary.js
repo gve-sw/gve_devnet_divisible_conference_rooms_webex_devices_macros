@@ -14,9 +14,9 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_primary
-* Version: 1.0.1
-* Released: May 7, 2024
-* Latest RoomOS version tested: 11.15.1.6 
+* Version: 1.0.2
+* Released: Feb 4, 2025
+* Latest RoomOS version tested: 11.25.1.4 
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -80,6 +80,14 @@ const SECONDARY_CODECS_PASSWORD = ''
 // with "Full Access" access level. 
 const SECONDARIES_BOT_TOKEN = ''
 
+// set FQDN_MODE to true if you are using FQDNs for the codec addresses in the compositions
+// If you set FQDN_MODE to true, you must also set the system unit name on this codec
+// The system unit name can be either the hostname if the DNS domain is correctly configured, or you can specify a full FQDN  
+const FQDN_MODE = false;
+
+// set ALLOW_INSECURE_HTTPS to true if you are using self-signed certificates on the codecs
+// set it to false if your codecs have valid certificates from a trusted CA
+const ALLOW_INSECURE_HTTPS = true;
 
 
 
@@ -705,8 +713,10 @@ async function init_intercodec() {
       }
     })
 
-    if (SECONDARIES_BOT_TOKEN == '')
+    if (SECONDARIES_BOT_TOKEN == '' && ALLOW_INSECURE_HTTPS)
       secondaryCodecs = new GMM.Connect.IP(SECONDARY_CODECS_USERNAME, SECONDARY_CODECS_PASSWORD, codecAddressArray);
+    else if (SECONDARIES_BOT_TOKEN == '' && !ALLOW_INSECURE_HTTPS)
+      secondaryCodecs = new GMM.Connect.HTTPS(SECONDARY_CODECS_USERNAME, SECONDARY_CODECS_PASSWORD, codecAddressArray);
     else
       secondaryCodecs = new GMM.Connect.Webex(SECONDARIES_BOT_TOKEN, codecAddressArray);
 
@@ -2098,7 +2108,11 @@ GMM.Event.Receiver.on(async event => {
     }
     else { // This section is for handling messages sent from primary to secondary codec and vice versa
       // and for messages from Aux to either Primary or Secondary in same room
-      let theSourceIdentifier = (SECONDARIES_BOT_TOKEN == '') ? event.Source?.IPv4 : event.Source?.DeviceId;
+
+      const sourceIP = event.Source?.IPv4 ?? event.Source?.IPv6;
+      const sourceLan = event.Source?.FQDN ?? sourceIP;
+      const theSourceIdentifier = (SECONDARIES_BOT_TOKEN == '') ? sourceLan : event.Source?.DeviceId;
+
       switch (event.App) { //Based on the App (Macro Name), I'll run some code
 
         case 'divisible_room_secondary':
@@ -2241,16 +2255,24 @@ GMM.Event.Receiver.on(async event => {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 async function sendIntercodecMessage(message) {
-  if (SECONDARIES_BOT_TOKEN == '') {
-    await secondaryCodecs.status(message).passIP().queue().catch(e => {
-      console.log('Error sending message');
-    });
-  }
-  else {
+  if (SECONDARIES_BOT_TOKEN != '') {
     await secondaryCodecs.status(message).passDeviceId().queue().catch(e => {
       console.log('Error sending message');
     });
+    return
   }
+
+  if (FQDN_MODE) {
+    await secondaryCodecs.status(message).passIP().passFQDN().queue().catch(e => {
+      console.log('Error sending message');
+    });
+    return
+  }
+
+  await secondaryCodecs.status(message).passIP().queue().catch(e => {
+    console.log('Error sending message');
+  });
+
 }
 
 
@@ -3546,4 +3568,3 @@ async function delayedStartup(time = 120) {
 }
 
 delayedStartup();
-

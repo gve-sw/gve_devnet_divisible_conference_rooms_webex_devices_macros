@@ -14,9 +14,9 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_secondary
-* Version: 1.0.1
-* Released: May 7, 2024
-* Latest RoomOS version tested: 11.15.1.6 
+* Version: 1.0.2
+* Released: Feb 4, 2025
+* Latest RoomOS version tested: 11.25.1.4 
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -97,7 +97,14 @@ const PRIMARY_CODEC_PASSWORD = '';
 // with "Full Access" access level. 
 const PRIMARY_BOT_TOKEN = '';
 
+// set FQDN_MODE to true if you are using FQDN for primary codec address, otherwise set to false
+// If you set FQDN_MODE to true, you must also set the system unit name on this codec
+// The system unit name can be either the hostname if the DNS domain is correctly configured, or you can specify a full FQDN  
+const FQDN_MODE = false;
 
+// set ALLOW_INSECURE_HTTPS to true if you are using self-signed certificates on the codecs
+// set it to false if your codecs have valid certificates from a trusted CA
+const ALLOW_INSECURE_HTTPS = true;
 
 
 /*
@@ -454,17 +461,22 @@ async function checkOverviewPreset() {
 }
 
 
+
+
+
+
 //Declare your object for GMM communication
 var primaryCodec = {};
 
 //Run your init script asynchronously 
 async function init_intercodec() {
   if (PRIMARY_CODEC_USER != '') {
-    if (PRIMARY_BOT_TOKEN == '')
-      primaryCodec = new GMM.Connect.IP(PRIMARY_CODEC_USER, PRIMARY_CODEC_PASSWORD, PRIMARY_CODEC_ADDRESS)
+    if (PRIMARY_BOT_TOKEN == '' && ALLOW_INSECURE_HTTPS)
+      primaryCodec = new GMM.Connect.IP(PRIMARY_CODEC_USER, PRIMARY_CODEC_PASSWORD, PRIMARY_CODEC_ADDRESS);
+    else if (PRIMARY_BOT_TOKEN == '' && !ALLOW_INSECURE_HTTPS)
+      primaryCodec = new GMM.Connect.HTTPS(PRIMARY_CODEC_USER, PRIMARY_CODEC_PASSWORD, PRIMARY_CODEC_ADDRESS);
     else
-      primaryCodec = new GMM.Connect.Webex(PRIMARY_BOT_TOKEN, PRIMARY_CODEC_ADDRESS)
-
+      primaryCodec = new GMM.Connect.Webex(PRIMARY_BOT_TOKEN, PRIMARY_CODEC_ADDRESS);
   }
 
 }
@@ -1672,7 +1684,10 @@ GMM.Event.Receiver.on(async event => {
     }
     else { // This section is for handling messages sent from primary to secondary codec and vice versa
       // and for messages from Aux to either Primary or Secondary in same room
-      let theSourceIdentifier = (PRIMARY_BOT_TOKEN == '') ? event.Source?.IPv4 : event.Source?.DeviceId;
+
+      const sourceIP = event.Source?.IPv4 ?? event.Source?.IPv6;
+      const sourceLan = event.Source?.FQDN ?? sourceIP;
+      const theSourceIdentifier = (PRIMARY_BOT_TOKEN == '') ? sourceLan : event.Source?.DeviceId;
       switch (event.App) { //Based on the App (Macro Name), I'll run some code
 
         case 'divisible_room_primary':
@@ -1836,18 +1851,27 @@ GMM.Event.Receiver.on(async event => {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 async function sendIntercodecMessage(message) {
-  if (PRIMARY_BOT_TOKEN == '') {
-    await primaryCodec.status(message).passIP().queue().catch(e => {
-      console.log('Error sending message');
-    });
-  }
-  else {
+  if (PRIMARY_BOT_TOKEN != '') {
     await primaryCodec.status(message).passDeviceId().queue().catch(e => {
       console.log('Error sending message');
     });
+    return
   }
-}
 
+  if (FQDN_MODE) {
+    await primaryCodec.status(message).passIP().passFQDN().queue().catch(e => {
+      console.log('Error sending message');
+    });
+    return
+  }
+
+  await primaryCodec.status(message).passIP().queue().catch(e => {
+    console.log('Error sending message');
+  });
+
+
+
+}
 
 
 
@@ -2731,4 +2755,3 @@ async function delayedStartup(time = 120) {
 }
 
 delayedStartup();
-

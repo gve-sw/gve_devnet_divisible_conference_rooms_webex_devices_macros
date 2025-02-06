@@ -31,7 +31,7 @@ or implied.
  * Released: May 16, 2022
  * Updated: Nov 8, 2023 
  * 
- * Version: 1.9.702
+ * Version: 1.9.702_FQDN
  * 
  * GMM.Config.adjustHTTPClientTimeout
  * 
@@ -341,6 +341,20 @@ export const GMM = {
         this.Payload.Source[`IP`] = stack
         return this
       }
+      passFQDN(fqdn) {
+        const fqdnRegex = /(?=^.{4,253}\.?$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)/;
+
+        // Set Source FQDN to provided fqdn if present and regex test pass
+        if (fqdn && fqdnRegex.test(fqdn)) {
+          this.Payload.Source['FQDN'] = fqdn
+          return this
+        }
+
+        // If no FQDN provided or invalid create FQDN property and add FQDN when sending
+        this.Payload.Source['FQDN'] = ''
+        return this
+
+      }
       passAuth(username = '', password = '') {
         if (username == '') {
           throw { '⚠ GMM Error ⚠': 'Username parameter was missing from method: .passAuth(username, password)', Class: 'GMM.Connect.IP', Action: 'Provide authentication to class contructor' }
@@ -358,6 +372,236 @@ export const GMM = {
           var temp = JSON.stringify(this.Payload.Source.IP).replace(/"/g, '')
           this.Payload.Source[`IP${this.Payload.Source.IP}`] = await xapi.Status.Network[1][`IP${this.Payload.Source.IP}`].Address.get()
           delete this.Payload.Source.IP
+        }
+        if (this.Payload.Source?.FQDN == '') {
+          // Attempt to populate Source FQDN from SysteUnitName or SystemUnitName + DNS Domain Name
+          const fqdnRegex = /(?=^.{4,253}\.?$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)/;
+          const systemUnitName = await xapi.Config.SystemUnit.Name.get();
+          const dnsDomainName = await xapi.Status.Network[1].DNS.Domain.Name.get();
+          const unitNameAndDomain = `${systemUnitName}.${dnsDomainName}`;
+          this.Payload.Source.FQDN = fqdnRegex.test(systemUnitName) ? systemUnitName : (fqdnRegex.test(unitNameAndDomain) ? unitNameAndDomain : '')
+          if (this.Payload.Source.FQDN == '') {
+            // No valid FQDN found, remove FQDN Source property
+            delete this.Payload.Source.FQDN
+          }
+        }
+        if (JSON.stringify(this.Payload).length > GMM.DevAssets.maxPayloadSize) {
+          throw ({ '⚠ GMM Error ⚠': `GMM Connect IP paylod exceed maximum character limit`, MaxLimit: GMM.DevAssets.maxPayloadSize, Payload: { Size: JSON.stringify(this.Payload).length, Content: JSON.stringify(this.Payload) } })
+        }
+
+        if (GMM_filter_DeviceIP == '') {
+          for (let i = 0; i < this.group.length; i++) {
+            this.Params.Url = `https://${this.group[i]}/putxml`
+            const body = `<Command><Message><Send><Text>${JSON.stringify(this.Payload)}</Text></Send></Message></Command>`
+            GMM.DevAssets.queue.push({ Params: JSON.parse(JSON.stringify(this.Params)), Body: body, Device: this.group[i], Type: 'Remote_IP', Id: `${id}` })
+            console.debug({ 'GMM Debug': `Remote_IP message queued for [${this.group[i]}]`, Filter: 'False', Payload: JSON.stringify(this.Payload).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`) })
+          }
+        } else {
+          const subGroup = GMM_filter_DeviceIP.toString().split(',')
+          for (let i = 0; i < subGroup.length; i++) {
+            if (this.group.includes(subGroup[i])) {
+              this.Params.Url = `https://${subGroup[i]}/putxml`
+              const body = `<Command><Message><Send><Text>${JSON.stringify(this.Payload)}</Text></Send></Message></Command>`
+              GMM.DevAssets.queue.push({ Params: JSON.parse(JSON.stringify(this.Params)), Body: body, Device: subGroup[i], Type: 'Remote_IP', Id: `${id}` })
+              console.debug({ 'GMM Debug': `Remote_IP message queued for [${subGroup[i]}]`, Filter: 'True', Payload: JSON.stringify(this.Payload).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`) })
+            } else {
+              const filterError = { '⚠ GMM Error ⚠': `Device [${subGroup[i]}] not found in device group`, Resolution: `Remove Device [${subGroup[i]}] from your queue filter or include Device [${subGroup[i]}] when this class is instantiated` }
+              console.error(filterError)
+            }
+          }
+        }
+        delete this.Payload.Source[`IP${temp}`]
+        delete this.Payload.Source.Auth
+      }
+      async post(...GMM_filter_DeviceIP) {
+        this.Payload.Source.Id = await xapi.Status.SystemUnit.Hardware.Module.SerialNumber.get()
+        if (typeof this.Payload.Source.IP != 'undefined') {
+          var temp = JSON.stringify(this.Payload.Source.IP).replace(/"/g, '')
+          this.Payload.Source[`IP${this.Payload.Source.IP}`] = await xapi.Status.Network[1][`IP${this.Payload.Source.IP}`].Address.get()
+          delete this.Payload.Source.IP
+        }
+        if (JSON.stringify(this.Payload).length > GMM.DevAssets.maxPayloadSize) {
+          throw ({ '⚠ GMM Error ⚠': `GMM Connect IP paylod exceed maximum character limit`, MaxLimit: GMM.DevAssets.maxPayloadSize, Payload: { Size: JSON.stringify(this.Payload).length, Content: JSON.stringify(this.Payload) } })
+        }
+        var GMM_groupError = []
+        var GMM_groupResponse = []
+        if (GMM_filter_DeviceIP == '') {
+          for (let i = 0; i < this.group.length; i++) {
+            this.Params.Url = `https://${this.group[i]}/putxml`
+            const body = `<Command><Message><Send><Text>${JSON.stringify(this.Payload)}</Text></Send></Message></Command>`
+            try {
+              const request = await xapi.Command.HttpClient.Post(this.Params, body)
+              delete request.Headers
+              request['Destination'] = this.group[i]
+              GMM_groupResponse.push(request)
+
+              if (GMM.Config?.allowLegacyErrorSystem) {
+                console.debug({ 'GMM Debug': `Remote_IP message sent to [${this.group[i]}]`, Filter: 'False', Payload: JSON.stringify(this.Payload).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`), Response: `${request.StatusCode}:${request.status}` })
+              }
+            } catch (e) {
+              e['GMM_Context'] = {
+                Destination: this.group[i],
+                Filter: 'False',
+                Message: {
+                  Type: this.Payload.Type,
+                  Value: this.Payload.Value,
+                  Payload: JSON.stringify(body).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`)
+                }
+              }
+              GMM_groupError.push(e)
+            }
+          }
+        } else {
+          const subGroup = GMM_filter_DeviceIP.toString().split(',')
+          for (let i = 0; i < subGroup.length; i++) {
+            if (this.group.includes(subGroup[i])) {
+              this.Params.Url = `https://${subGroup[i]}/putxml`
+              const body = `<Command><Message><Send><Text>${JSON.stringify(this.Payload)}</Text></Send></Message></Command>`
+              try {
+                const request = await xapi.Command.HttpClient.Post(this.Params, body)
+
+                delete request.Headers
+                request['Destination'] = this.group[i]
+                GMM_groupResponse.push(request)
+
+                if (GMM.Config?.allowLegacyErrorSystem) {
+                  console.debug({ 'GMM Debug': `Remote_IP message sent to [${subGroup[i]}]`, Filter: 'True', Payload: JSON.stringify(this.Payload).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`), Response: `${request.StatusCode}:${request.status}` })
+                }
+
+              } catch (e) {
+                e['GMM_Context'] = {
+                  Destination: subGroup[i],
+                  Filter: 'True',
+                  Message: { Type: this.Payload.Type, Value: this.Payload.Value, Payload: JSON.stringify(body).replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`) }
+                }
+                GMM_groupError.push(e)
+              }
+            } else {
+              const filterError = { '⚠ GMM Error ⚠': `Device [${subGroup[i]}] not found in device group`, Resolution: `Remove Device [${subGroup[i]}] from your post filter or include Device [${subGroup[i]}] when this class is instantiated` }
+              console.error(filterError)
+            }
+          }
+        }
+        delete this.Payload.Source[`IP${temp}`]
+        delete this.Payload.Source.Auth
+
+        if (GMM.Config?.allowLegacyErrorSystem) {
+          if (GMM_groupError.length > 0) {
+            throw GMM_groupError
+          }
+        } else {
+          return {
+            Responses: GMM_groupResponse,
+            Errors: GMM_groupError
+          }
+        }
+      }
+    },
+    HTTPS: class {
+      constructor(CommonUsername = '', CommonPassword = '', ...ipArray) {
+        const b64_reg = /^(?:[A-Za-z\d+/]{4})*(?:[A-Za-z\d+/]{3}=|[A-Za-z\d+/]{2}==)?$/
+        if (CommonUsername == '' && CommonPassword == '') {
+          throw { '⚠ GMM Error ⚠': 'Common Authentication Parameters not found, unable to contruct GMM.Connect.IP class' }
+        } else if (CommonPassword == '' && b64_reg.test(CommonUsername)) {
+          this.Params = {
+            Url: ``,
+            Header: ['Content-Type: text/xml', `Authorization: Basic ${CommonUsername}`]
+          }
+        } else {
+          this.Params = {
+            Url: ``,
+            Header: ['Content-Type: text/xml', `Authorization: Basic ${btoa(CommonUsername + ':' + CommonPassword)}`]
+          }
+        }
+        if (GMM.Config?.adjustHTTPClientTimeout > 0) {
+          if (GMM.Config?.adjustHTTPClientTimeout > 30) {
+            console.warn({ '⚠ GMM Warn ⚠': `GMM.Config.adjustHTTPClientTimeout max timeout is 30 seconds. Defaulting to 30 seconds` })
+          } else {
+            this.Params['Timeout'] = GMM.Config.adjustHTTPClientTimeout
+          }
+        }
+        this.Payload = { App: GMM.Config.MacroName, Source: { Type: 'Remote_IP', Id: '' }, Type: '', Value: '' }
+        this.group = ipArray.toString().split(',')
+        xapi.Config.HttpClient.Mode.set('On')
+        console.warn({ '⚠ GMM Warn ⚠': `The HTTPClient has been enabled by instantiating an object with the GMM.Connect.IP class found in the ${GMM.Config.MacroName} macro` })
+        console.warn({ '⚠ GMM Warn ⚠': `Be sure to securely store your device credentials. It is POOR PRACTICE to store any credentials within a Macro` })
+        if (GMM.Config?.queueInternvalInMs < 250) { console.warn({ '⚠ GMM Warn ⚠': `${GMM.Config.queueInternvalInMs}ms is below the recommended minimum of 250ms for GMM.Config.queueInternvalInMs` }) };
+      }
+      status(message) {
+        if (message == undefined || message == '') {
+          throw { '⚠ GMM Error ⚠': 'Message parameter not fulfilled in .status(message) method', Class: 'GMM.Connect.IP Class', Action: 'Provide an object as message parameter' }
+        }
+        this.Payload['Type'] = 'Status'
+        this.Payload['Value'] = message
+        return this
+      }
+      error(message) {
+        if (message == undefined || message == '') {
+          throw { '⚠ GMM Error ⚠': 'Message parameter not fulfilled in .error(message) method', Class: 'GMM.Connect.IP Class', Action: 'Provide an object as message parameter' }
+        }
+        this.Payload['Type'] = 'Error'
+        this.Payload['Value'] = message
+        return this
+      }
+      command(message) {
+        if (message == undefined || message == '') {
+
+          throw { '⚠ GMM Error ⚠': 'Message parameter not fulfilled in .command(message) method', Class: 'GMM.Connect.IP Class', Action: 'Provide an object as message parameter' }
+        }
+        this.Payload['Type'] = 'Command'
+        this.Payload['Value'] = message
+        return this
+      }
+      passIP(stack = 'v4') {
+        if (stack != 'v4' && stack != 'v6') {
+          throw { '⚠ GMM Error ⚠': `[${stack}] is an invalid IPstack. Accepted Values for the method .passIP(stack) are "v4" or "v6"` }
+        }
+        this.Payload.Source[`IP`] = stack
+        return this
+      }
+      passFQDN(fqdn) {
+        const fqdnRegex = /(?=^.{4,253}\.?$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)/;
+
+        // Set Source FQDN to provided fqdn if present and regex test pass
+        if (fqdn && fqdnRegex.test(fqdn)) {
+          this.Payload.Source['FQDN'] = fqdn
+          return this
+        }
+
+        // If no FQDN provided or invalid create FQDN property and add FQDN when sending
+        this.Payload.Source['FQDN'] = ''
+        return this
+
+      }
+      passAuth(username = '', password = '') {
+        if (username == '') {
+          throw { '⚠ GMM Error ⚠': 'Username parameter was missing from method: .passAuth(username, password)', Class: 'GMM.Connect.IP', Action: 'Provide authentication to class contructor' }
+        }
+        if (password == '') {
+          throw { '⚠ GMM Error ⚠': 'Password parameter was missing from method: .passAuth(username, password)', Class: 'GMM.Connect.IP', Action: 'Provide authentication to class contructor' }
+        }
+        this.Payload.Source['Auth'] = btoa(`${username}:${password}`)
+        console.warn({ '⚠ GMM Warn ⚠': `The passAuth() method has been applied to this payload`, Value: this.Payload.Value })
+        return this
+      }
+      async queue(id, ...GMM_filter_DeviceIP) {
+        this.Payload.Source.Id = await xapi.Status.SystemUnit.Hardware.Module.SerialNumber.get()
+        if (typeof this.Payload.Source.IP != 'undefined') {
+          var temp = JSON.stringify(this.Payload.Source.IP).replace(/"/g, '')
+          this.Payload.Source[`IP${this.Payload.Source.IP}`] = await xapi.Status.Network[1][`IP${this.Payload.Source.IP}`].Address.get()
+          delete this.Payload.Source.IP
+        }
+        if (this.Payload.Source?.FQDN == '') {
+          // Attempt to populate Source FQDN from SysteUnitName or SystemUnitName + DNS Domain Name
+          const fqdnRegex = /(?=^.{4,253}\.?$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)/;
+          const systemUnitName = await xapi.Config.SystemUnit.Name.get();
+          const dnsDomainName = await xapi.Status.Network[1].DNS.Domain.Name.get();
+          const unitNameAndDomain = `${systemUnitName}.${dnsDomainName}`;
+          this.Payload.Source.FQDN = fqdnRegex.test(systemUnitName) ? systemUnitName : (fqdnRegex.test(unitNameAndDomain) ? unitNameAndDomain : '')
+          if (this.Payload.Source.FQDN == '') {
+            // No valid FQDN found, remove FQDN Source property
+            delete this.Payload.Source.FQDN
+          }
         }
         if (JSON.stringify(this.Payload).length > GMM.DevAssets.maxPayloadSize) {
           throw ({ '⚠ GMM Error ⚠': `GMM Connect IP paylod exceed maximum character limit`, MaxLimit: GMM.DevAssets.maxPayloadSize, Payload: { Size: JSON.stringify(this.Payload).length, Content: JSON.stringify(this.Payload) } })
@@ -781,11 +1025,11 @@ export const GMM = {
               } catch (e) {
                 message['Queue_ID'] = GMM.DevAssets.queue[0].Id
                 message['Response'] = e
-                console.debug({ 'GMM Debug': `${GMM.DevAssets.queue[0].Type} Queue ID [${GMM.DevAssets.queue[0].Id}] processed and sent to [${GMM.DevAssets.queue[0].Device}]`, Payload: GMM.DevAssets.queue[0].Body.replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`), Response: `${GMM_Queue_request_ip.StatusCode}:${GMM_Queue_request_ip.status}` })
-                GMM.DevAssets.queue.shift()
+                console.debug({ 'GMM Debug': `${GMM.DevAssets.queue[0].Type} Queue ID [${GMM.DevAssets.queue[0].Id}] processed and sent to [${GMM.DevAssets.queue[0].Device}]`, Payload: GMM.DevAssets.queue[0].Body.replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`), Response: `${e.message}` })
                 message['QueueStatus'] = { RemainingRequests: GMM.DevAssets.queue.length == 0 ? 'Empty' : GMM.DevAssets.queue.length, IdPool: remainingIds(), CurrentDelay: `${interval} ms` }
                 callBack(message)
-                console.error({ '⚠ GMM Error ⚠': e.message, StatusCode: e.data.StatusCode, Message: `${GMM.DevAssets.queue[0].Type} Queue ID [${GMM.DevAssets.queue[0].Id}] processed and erred on [${GMM.DevAssets.queue[0].Device}]`, Payload: GMM.DevAssets.queue[0].Body.replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`) })
+                console.error({ '⚠ GMM Error ⚠': e.message, StatusCode: e?.data?.StatusCode ?? e?.message, Message: `${GMM.DevAssets.queue[0]?.Type} Queue ID [${GMM.DevAssets.queue[0]?.Id}] processed and erred on [${GMM.DevAssets.queue[0]?.Device}]`, Payload: GMM.DevAssets.queue[0]?.Body.replace(GMM.DevAssets.filterAuthRegex, `"Auth":"***[HIDDEN]***"`) })
+                GMM.DevAssets.queue.shift()
               }
               break;
             case 'Remote_Webex':
