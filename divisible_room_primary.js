@@ -14,9 +14,9 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_primary
-* Version: 1.0.2
-* Released: Feb 4, 2025
-* Latest RoomOS version tested: 11.25.1.4 
+* Version: 1.0.3
+* Released: May 19, 2025
+* Latest RoomOS version tested: 11.28.1.5 
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -445,8 +445,8 @@ async function validate_config() {
     await disableMacro(`config validation fail: Platform ${ProductPlatform} not supported.`);
   }
 
-  if (module.name.replace('./', '') != 'divisible_room_primary')
-    await disableMacro(`config validation fail: macro name has changed to: ${module.name.replace('./', '')}. Please set back to: divisible_room_primary`);
+  if (_main_macro_name() != 'divisible_room_primary')
+    await disableMacro(`config validation fail: macro name has changed to: ${_main_macro_name()}. Please set back to: divisible_room_primary`);
 
   if (SECONDARY_CODECS_USERNAME == '')
     await disableMacro(`config validation fail: SECONDARY_CODECS credentials must be set.  Current values: SECONDARY_CODECS_USERNAME: ${SECONDARY_CODECS_USERNAME} SECONDARY_CODECS_PASSWORD= ${SECONDARY_CODECS_PASSWORD}`);
@@ -565,11 +565,11 @@ function delay(ms) {
 
 async function disableMacro(reason = 'N/A') {
   console.warn(reason)
-  let act = `Disabling [${module.name.replace('./', '')}] in 10 seconds`
+  let act = `Disabling [${_main_macro_name()}] in 10 seconds`
   console.error({ Error: reason, Action: act })
   await xapi.Command.UserInterface.Message.Alert.Display({ Title: '⚠️ Macro Error ⚠️', Text: `${reason}<p>${act}`, Duration: 9 });
   await delay(10000);
-  await xapi.Command.Macros.Macro.Deactivate({ Name: module.name.replace('./', '') });
+  await xapi.Command.Macros.Macro.Deactivate({ Name: _main_macro_name() });
   await delay(100);
   await xapi.Command.Macros.Runtime.Restart();
 }
@@ -736,7 +736,7 @@ async function init_intercodec() {
   }
 }
 
-const localCallout = new GMM.Connect.Local(module.name.replace('./', ''))
+const localCallout = new GMM.Connect.Local(_main_macro_name())
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // VARIABLES
@@ -1152,6 +1152,8 @@ async function setPrimaryDefaultConfig() {
             .catch((error) => { console.error("8" + error); });
           xapi.config.set('Audio Input Microphone ' + micId.toString() + ' EchoControl NoiseReduction', 'Off')
             .catch((error) => { console.error("9" + error); });
+          //TODO: consider removing that level setting below since integrator might want to set their own levels that are not
+          // overwritten when macro restarts
           xapi.config.set('Audio Input Microphone ' + micId.toString() + ' Level', '18')
             .catch((error) => { console.error("10" + error); });
           xapi.config.set('Audio Input Microphone ' + micId.toString() + ' Mode', 'Off')
@@ -1236,6 +1238,7 @@ async function setPrimaryDefaultConfig() {
     .catch((error) => { console.error("50" + error); });
   xapi.config.set('Video Input Connector 1 InputSourceType', 'camera')
     .catch((error) => { console.error("51" + error); });
+  // TODO: consider removing line of code that hard codes the name of the camera input below
   xapi.config.set('Video Input Connector 1 Name', 'Quad Camera')
     .catch((error) => { console.error("52" + error); });
   xapi.config.set('Video Input Connector 1 PreferredResolution', '1920_1080_60')
@@ -3526,7 +3529,7 @@ function removeWarning() {
 }
 
 async function monitorOnAutoError(message) {
-  let macro = module.name.split('./')[1]
+  let macro = _main_macro_name()
   await xapi.Command.UserInterface.Message.Alert.Display({
     Title: message.Error,
     Text: message.Message,

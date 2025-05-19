@@ -6,3 +6,7 @@
 
 - Added support for fully qualified domain names (FQDN) for LAN based inter-codec communications
 - Added a toggle to enforce secure HTTPS for LAN based inter-codec communications
+
+5/19/25 Changes (version 1.0.3)
+
+- Changed method of obtaining module name CommonJS to ECMAScript given the deprecation of CommonJS in RoomOS.
