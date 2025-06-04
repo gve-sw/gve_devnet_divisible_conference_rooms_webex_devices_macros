@@ -14,8 +14,8 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_primary
-* Version: 1.0.3
-* Released: May 19, 2025
+* Version: 1.0.4
+* Released: June 3, 2025
 * Latest RoomOS version tested: 11.28.1.5 
 *
 * Macro Author:      	Gerardo Chaves

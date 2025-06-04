@@ -14,8 +14,8 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_secondary
-* Version: 1.0.3
-* Released: May 19, 2025
+* Version: 1.0.4
+* Released: June 3, 2025
 * Latest RoomOS version tested: 11.28.1.5 
 *
 * Macro Author:      	Gerardo Chaves
@@ -2734,7 +2734,80 @@ GMM.Event.Queue.on(report => {
   }
 });
 
+async function handleWidgetActions(event) {
 
+  let widgetId = event.WidgetId;
+
+  switch (widgetId) {
+
+    case 'widget_pt_settings':
+      let presenterSource = 0;
+      let connectorDict = {};
+      if (presenterTrackConfigured) {
+        if (event.Type == 'released')
+          switch (event.Value) {
+            case '1':
+              console.log('Off');
+              console.log("Turning off PresenterTrack...");
+              //recallFullPresenter();
+              xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Off' });
+              PRESENTER_QA_MODE = false;
+              activateSpeakerTrack();
+              recallQuadCam();
+              break;
+
+            case '2':
+              console.log('On');
+              console.log("Turning on PresenterTrack only...");
+              if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+              if (SIDE_BY_SIDE_TIME > 0) {
+                //deactivateSpeakerTrack(); 
+                activateSpeakerTrack(); //TODO: test if not activating speakertrack here when you have an SP60 allows it to work in QA mode
+                presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+                connectorDict = { ConnectorId: presenterSource };
+                xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+                lastSourceDict = connectorDict;
+              }
+              if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+              xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Persistent' });
+              pauseSpeakerTrack();
+
+              PRESENTER_QA_MODE = false;
+              break;
+
+            case '3':
+              console.log('QA Mode');
+              console.log("Turning on PresenterTrack with QA Mode...");
+              if (webrtc_mode && !isOSEleven) xapi.Command.Video.Input.MainVideo.Mute();
+              if (SIDE_BY_SIDE_TIME > 0) {
+                activateSpeakerTrack(); //TODO: test if not activating speakertrack here when you have an SP60 allows it to work in QA mode
+                //pauseSpeakerTrack();
+                presenterSource = await xapi.Config.Cameras.PresenterTrack.Connector.get();
+                connectorDict = { ConnectorId: presenterSource };
+                xapi.command('Video Input SetMainVideoSource', connectorDict).catch(handleError);
+                lastSourceDict = connectorDict;
+                xapi.Command.Cameras.PresenterTrack.Set({ Mode: 'Persistent' });
+                pauseSpeakerTrack();
+              }
+              if (webrtc_mode && !isOSEleven) setTimeout(function () { xapi.Command.Video.Input.MainVideo.Unmute() }, WEBRTC_VIDEO_UNMUTE_WAIT_TIME);
+
+              PRESENTER_QA_MODE = true;
+              allowCameraSwitching = true; // this is to allow camera switching in QA mode if initialCallTimer had not expired.
+              //resumeSpeakerTrack();
+              break;
+
+          }
+      }
+      else {
+        console.log("PresenterTrack not configured or MONITOR_PRESENTERTRACK set to false !!!");
+      }
+      break;
+
+  }
+
+}
+
+xapi.event.on('UserInterface Extensions Widget Action', (event) => handleWidgetActions(event));
 
 /////////////////////////////////////////////////////////////////////////////////////////
 // INVOCATION OF INIT() TO START THE MACRO

@@ -10,3 +10,7 @@
 5/19/25 Changes (version 1.0.3)
 
 - Changed method of obtaining module name CommonJS to ECMAScript given the deprecation of CommonJS in RoomOS.
+
+6/3/25 Changes (version 1.0.4)
+
+- Re-incorporated code on secondary to handle PresenterTrack with QA mode when divided.
