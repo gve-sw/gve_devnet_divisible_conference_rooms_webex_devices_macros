@@ -14,8 +14,8 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_primary
-* Version: 1.0.4
-* Released: June 3, 2025
+* Version: 1.0.5
+* Released: June 6, 2025
 * Latest RoomOS version tested: 11.28.1.5 
 *
 * Macro Author:      	Gerardo Chaves
@@ -491,7 +491,7 @@ async function validate_config() {
 
   // Check if using USB mic/input, that Echo control is turned on
   if (config.usbMics.length > 0) {
-    const usbEchoControl = await xapi.config.Audio.Input.USBInterface[1].EchoControl.Mode.get()
+    const usbEchoControl = await xapi.Config.Audio.Input.USBInterface[1].EchoControl.Mode.get()
     if (usbEchoControl != 'On')
       await disableMacro(`config validation fail: when using USB microphone input, Echo Control needs to be enabled. Only asynchronous USB devices are supported. Please enable and re-activate macro`);
 

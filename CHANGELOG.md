@@ -14,3 +14,7 @@
 6/3/25 Changes (version 1.0.4)
 
 - Re-incorporated code on secondary to handle PresenterTrack with QA mode when divided.
+
+6/6/25 Changes (version 1.0.5)
+
+- Changed syntax for xapi.Config.Audio.Input.USBInterface[1].EchoControl.Mode.get() call which is now case sensitive (worked with lower case c for "config" originally)
