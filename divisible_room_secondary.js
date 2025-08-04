@@ -14,9 +14,9 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_secondary
-* Version: 1.0.5
-* Released: June 6, 2025
-* Latest RoomOS version tested: 11.28.1.5 
+* Version: 1.0.6
+* Released: August 4, 2025
+* Latest RoomOS version tested: 11.30.1.5 
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -343,7 +343,7 @@ async function validate_config() {
   if (_main_macro_name() != 'divisible_room_secondary')
     await disableMacro(`config validation fail: macro name has changed to: ${_main_macro_name()}. Please set back to: divisible_room_secondary`);
 
-  if (PRIMARY_CODEC_USER == '')
+  if (PRIMARY_CODEC_USER == '' && PRIMARY_BOT_TOKEN == '')
     await disableMacro(`config validation fail: OTHER_CODEC credentials must be set.  Current values: PRIMARY_CODEC_USER: ${PRIMARY_CODEC_USER} PRIMARY_CODEC_PASSWORD= ${PRIMARY_CODEC_PASSWORD}`);
   // allow up to 8 analog mics
   let allowedMics = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -470,7 +470,7 @@ var primaryCodec = {};
 
 //Run your init script asynchronously 
 async function init_intercodec() {
-  if (PRIMARY_CODEC_USER != '') {
+  if (PRIMARY_CODEC_USER != '' || PRIMARY_BOT_TOKEN != '') {
     if (PRIMARY_BOT_TOKEN == '' && ALLOW_INSECURE_HTTPS)
       primaryCodec = new GMM.Connect.IP(PRIMARY_CODEC_USER, PRIMARY_CODEC_PASSWORD, PRIMARY_CODEC_ADDRESS);
     else if (PRIMARY_BOT_TOKEN == '' && !ALLOW_INSECURE_HTTPS)
@@ -2138,26 +2138,27 @@ async function init_switching() {
     }
   });
 
-
-  // register handler for Call Successful
-  xapi.Event.CallSuccessful.on(async () => {
-
-    console.log("Starting new call timer...");
-    //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
-    await startAutomation();
-    recallSideBySideMode();
-
-    // only initialize initial call timer if side by side timer (overview timer) is not zero
-    // because, if zero, that means we will always be showing side by side (overview) mode
-    if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
-
-    // always tell the other codec when your are in or out of a call
-    await sendIntercodecMessage('CALL_CONNECTED');
-
-    handleExternalController('SECONDARY_CALLCONNECT');
-
-
-  });
+  /*
+    // register handler for Call Successful
+    xapi.Event.CallSuccessful.on(async () => {
+  
+      console.log("Starting new call timer...");
+      //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
+      await startAutomation();
+      recallSideBySideMode();
+  
+      // only initialize initial call timer if side by side timer (overview timer) is not zero
+      // because, if zero, that means we will always be showing side by side (overview) mode
+      if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
+  
+      // always tell the other codec when your are in or out of a call
+      await sendIntercodecMessage('CALL_CONNECTED');
+  
+      handleExternalController('SECONDARY_CALLCONNECT');
+  
+  
+    });
+    */
 
   // register handler for Call Disconnect
   xapi.Event.CallDisconnect.on(async () => {
@@ -2174,6 +2175,31 @@ async function init_switching() {
     handleExternalController('SECONDARY_CALLDISCONNECT');
 
   });
+
+
+  // register alternative handler for Call events using xStatus.Call.Status
+  xapi.Status.Call.Status.on(async (value) => {
+    console.log(`xStatus RECEIVED: Call Status: ${value}`);
+    if (value == 'Connected') {
+      console.log("Handling Call Connected event...");
+      console.log("Starting new call timer...");
+      //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
+      await startAutomation();
+      recallSideBySideMode();
+
+      // only initialize initial call timer if side by side timer (overview timer) is not zero
+      // because, if zero, that means we will always be showing side by side (overview) mode
+      if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
+
+      // always tell the other codec when your are in or out of a call
+      await sendIntercodecMessage('CALL_CONNECTED');
+
+      handleExternalController('SECONDARY_CALLCONNECT');
+    }
+  })
+
+
+
 
   xapi.Event.PresentationPreviewStarted
     .on(async value => {
@@ -2712,17 +2738,6 @@ function removeWarning() {
     .catch((error) => { console.error(error); });
 }
 
-async function monitorOnAutoError(message) {
-  let macro = _main_macro_name()
-  await xapi.Command.UserInterface.Message.Alert.Display({
-    Title: message.Error,
-    Text: message.Message,
-    Duration: 30
-  })
-  console.error(message)
-  await xapi.Command.Macros.Macro.Deactivate({ Name: macro })
-  await xapi.Command.Macros.Runtime.Restart();
-}
 
 
 GMM.Event.Queue.on(report => {

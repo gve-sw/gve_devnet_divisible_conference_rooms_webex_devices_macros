@@ -18,3 +18,8 @@
 6/6/25 Changes (version 1.0.5)
 
 - Changed syntax for xapi.Config.Audio.Input.USBInterface[1].EchoControl.Mode.get() call which is now case sensitive (worked with lower case c for "config" originally)
+
+8/4/25 Changes (version 1.0.6)
+
+- Changes in the way connected calls are detected to work around issues with "Remote Access" feature in Control Hub which triggers CallSuccessful Event which confused the macro.
+- Fixes in the handling and validation of Bot Tokens to be able to use Webex ID and Bot Token instead of IP address and username/password for inter-codec communication

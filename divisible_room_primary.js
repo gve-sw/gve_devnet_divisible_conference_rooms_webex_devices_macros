@@ -14,9 +14,9 @@ or implied.
 *
 * Repository: gve_devnet_divisible_conference_rooms_webex_devices_macros
 * Macro file: divisible_room_primary
-* Version: 1.0.5
-* Released: June 6, 2025
-* Latest RoomOS version tested: 11.28.1.5 
+* Version: 1.0.6
+* Released: August 4, 2025
+* Latest RoomOS version tested: 11.30.1.5 
 *
 * Macro Author:      	Gerardo Chaves
 *                    	Technical Solutions Architect
@@ -448,7 +448,7 @@ async function validate_config() {
   if (_main_macro_name() != 'divisible_room_primary')
     await disableMacro(`config validation fail: macro name has changed to: ${_main_macro_name()}. Please set back to: divisible_room_primary`);
 
-  if (SECONDARY_CODECS_USERNAME == '')
+  if (SECONDARY_CODECS_USERNAME == '' && SECONDARIES_BOT_TOKEN == '')
     await disableMacro(`config validation fail: SECONDARY_CODECS credentials must be set.  Current values: SECONDARY_CODECS_USERNAME: ${SECONDARY_CODECS_USERNAME} SECONDARY_CODECS_PASSWORD= ${SECONDARY_CODECS_PASSWORD}`);
   // allow up to 8 analog mics
   let allowedMics = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -684,7 +684,7 @@ var secondaryCodecs = {};
 
 //Run your init script asynchronously 
 async function init_intercodec() {
-  if (SECONDARY_CODECS_USERNAME != '') {
+  if (SECONDARY_CODECS_USERNAME != '' || SECONDARIES_BOT_TOKEN != '') {
     let stored_setStatus = {}
     stored_setStatus = await GMM.read.global('JoinSplit_secondariesStatus').catch(async e => {
       console.log("No initial JoinSplit_secondariesStatus global detected, using constants in macro to create new one")
@@ -1154,8 +1154,8 @@ async function setPrimaryDefaultConfig() {
             .catch((error) => { console.error("9" + error); });
           //TODO: consider removing that level setting below since integrator might want to set their own levels that are not
           // overwritten when macro restarts
-          xapi.config.set('Audio Input Microphone ' + micId.toString() + ' Level', '18')
-            .catch((error) => { console.error("10" + error); });
+          //xapi.config.set('Audio Input Microphone ' + micId.toString() + ' Level', '18')
+          //  .catch((error) => { console.error("10" + error); });
           xapi.config.set('Audio Input Microphone ' + micId.toString() + ' Mode', 'Off')
             .catch((error) => { console.error("11" + error); });
           if (await isCodecPro()) xapi.config.set('Audio Input Microphone ' + micId.toString() + ' PhantomPower', 'Off').catch((error) => { console.error("12" + error); });
@@ -2598,31 +2598,31 @@ async function init_switching() {
     }
   });
 
-
-  // register handler for Call Successful
-  xapi.Event.CallSuccessful.on(async () => {
-
-    console.log("Starting new call timer...");
-    //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
-    await startAutomation();
-    recallSideBySideMode();
-
-    // only initialize initial call timer if side by side timer (overview timer) is not zero
-    // because, if zero, that means we will always be showing side by side (overview) mode
-    if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
-
-    // always tell the other codec when your are in or out of a call
-    await sendIntercodecMessage('CALL_CONNECTED');
-
-    // only need to keep track of codecs being in call with these
-    // booleans in primary codec which is the one that initiates join/split
-    primaryInCall = true;
-    evalCustomPanels();
-    handleExternalController('PRIMARY_CALLCONNECT');
-
-
-  });
-
+  /*
+    // register handler for Call Successful
+    xapi.Event.CallSuccessful.on(async () => {
+  
+      console.log("Starting new call timer...");
+      //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
+      await startAutomation();
+      recallSideBySideMode();
+  
+      // only initialize initial call timer if side by side timer (overview timer) is not zero
+      // because, if zero, that means we will always be showing side by side (overview) mode
+      if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
+  
+      // always tell the other codec when your are in or out of a call
+      await sendIntercodecMessage('CALL_CONNECTED');
+  
+      // only need to keep track of codecs being in call with these
+      // booleans in primary codec which is the one that initiates join/split
+      primaryInCall = true;
+      evalCustomPanels();
+      handleExternalController('PRIMARY_CALLCONNECT');
+  
+  
+    });
+      */
   // register handler for Call Disconnect
   xapi.Event.CallDisconnect.on(async () => {
     if (!usb_mode) {
@@ -2640,9 +2640,34 @@ async function init_switching() {
     primaryInCall = false;
     evalCustomPanels();
     handleExternalController('PRIMARY_CALLDISCONNECT');
-
-
   });
+
+
+  // register alternative handler for Call events using xStatus.Call.Status
+  xapi.Status.Call.Status.on(async (value) => {
+    console.log(`xStatus RECEIVED: Call Status: ${value}`);
+    if (value == 'Connected') {
+      console.log("Handling Call Connected event...");
+      console.log("Starting new call timer...");
+      //webrtc_mode=false; // just in case we do not get the right event when ending webrtc calls
+      await startAutomation();
+      recallSideBySideMode();
+
+      // only initialize initial call timer if side by side timer (overview timer) is not zero
+      // because, if zero, that means we will always be showing side by side (overview) mode
+      if (SIDE_BY_SIDE_TIME > 0) startInitialCallTimer();
+
+      // always tell the other codec when your are in or out of a call
+      await sendIntercodecMessage('CALL_CONNECTED');
+
+      // only need to keep track of codecs being in call with these
+      // booleans in primary codec which is the one that initiates join/split
+      primaryInCall = true;
+      evalCustomPanels();
+      handleExternalController('PRIMARY_CALLCONNECT');
+    }
+  })
+
 
   xapi.Event.PresentationPreviewStarted
     .on(async value => {
@@ -3267,7 +3292,7 @@ async function primaryTriggerCombine() {
 async function primaryTriggerDivide() {
   await sendIntercodecMessage("DIVIDE");
   alertSplitScreen();
-  console.log('Primary Switched to Divided Mode sneding message "DIVIDE" to secondaries');
+  console.log('Primary Switched to Divided Mode sending message "DIVIDE" to secondaries');
   primaryStandaloneMode();
   setCombinedMode(false);
 }
@@ -3528,17 +3553,7 @@ function removeWarning() {
     .catch((error) => { console.error(error); });
 }
 
-async function monitorOnAutoError(message) {
-  let macro = _main_macro_name()
-  await xapi.Command.UserInterface.Message.Alert.Display({
-    Title: message.Error,
-    Text: message.Message,
-    Duration: 30
-  })
-  console.error(message)
-  await xapi.Command.Macros.Macro.Deactivate({ Name: macro })
-  await xapi.Command.Macros.Runtime.Restart();
-}
+
 
 
 GMM.Event.Queue.on(report => {
